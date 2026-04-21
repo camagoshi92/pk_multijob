@@ -7,6 +7,12 @@ name        'pk_multijob'
 description 'Multi Job System for VORP - PK Edition'
 version     '1.0.0'
 
+dependencies {
+    'vorp_core',
+    'tpz_menu_base',
+    'oxmysql',
+}
+
 shared_scripts {
     'shared/config.lua',
 }

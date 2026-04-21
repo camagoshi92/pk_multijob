@@ -15,12 +15,20 @@ RegisterNetEvent("pk_multijob:client:notify", function(title, subtitle, ntype)
 end)
 
 -- ============================================================
---  Comando: /pk_myjobs apre il menu
+--  Apertura menu
 -- ============================================================
 
 RegisterCommand("pk_myjobs", function()
     openJobMenu()
 end, false)
+
+RegisterNetEvent("pk_multijob:client:openMenu", function()
+    openJobMenu()
+end)
+
+exports("OpenJobMenu", function()
+    openJobMenu()
+end)
 
 -- ============================================================
 --  Al spawn mostra il job attivo
@@ -28,7 +36,10 @@ end, false)
 
 AddEventHandler("vorp_core:Client:OnPlayerSpawned", function()
     Core.Callback.TriggerAsync("pk_multijob:getMyJobs", function(data)
-        if not data then return end
+        if not data then
+            return
+        end
+
         Core.NotifySimpleTop(
             "Lavoro attivo",
             data.active .. " (grade " .. data.grade .. ")",
