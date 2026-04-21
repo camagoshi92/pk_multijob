@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Administrator/Desktop/SERVER-redem/txData/VORPCore_2B7E28.base/resources/[standalone]/v-lib/game/client/**)",
+      "Read(//c/Users/Administrator/Desktop/SERVER-redem/txData/VORPCore_2B7E28.base/resources/**)"
+    ]
+  }
+}
