@@ -19,15 +19,15 @@ end)
 -- ============================================================
 
 RegisterCommand("pk_myjobs", function()
-    openJobMenu()
+    CreateThread(openJobMenu)
 end, false)
 
 RegisterNetEvent("pk_multijob:client:openMenu", function()
-    openJobMenu()
+    CreateThread(openJobMenu)
 end)
 
 exports("OpenJobMenu", function()
-    openJobMenu()
+    CreateThread(openJobMenu)
 end)
 
 -- ============================================================

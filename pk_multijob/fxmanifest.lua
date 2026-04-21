@@ -9,7 +9,7 @@ version     '1.0.0'
 
 dependencies {
     'vorp_core',
-    'tpz_menu_base',
+    'v-lib',
     'oxmysql',
 }
 
