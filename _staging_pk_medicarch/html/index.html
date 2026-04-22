@@ -1,0 +1,147 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pk_medicarch</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="overlay" class="hidden">
+    <div class="bg-noise"></div>
+    <main class="panel">
+      <header class="topbar">
+        <div>
+          <h1 id="appTitle">Medical Database Office</h1>
+          <p id="subTitle">Department</p>
+        </div>
+      </header>
+
+      <section id="archiveView" class="view hidden">
+        <nav class="tabs">
+          <button class="tab active" data-tab="patientsTab" id="tabPatients">Patients</button>
+          <button class="tab" data-tab="historyTab" id="tabHistory">History</button>
+          <button class="tab" data-tab="formsTab" id="tabForms">Forms</button>
+        </nav>
+
+        <div id="patientsTab" class="tab-content active">
+          <div class="grid-2">
+            <section class="card">
+              <h3 id="patientsListTitle">Patient List</h3>
+              <div class="row">
+                <input id="patientSearch" type="text" placeholder="Search" />
+                <button id="searchPatientBtn" class="btn">Search</button>
+              </div>
+              <div id="patientsList" class="list"></div>
+              <div class="pager">
+                <button id="patientsPrev" class="btn">Prev</button>
+                <span id="patientsPageInfo"></span>
+                <button id="patientsNext" class="btn">Next</button>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3 id="patientInfoTitle">Patient Information</h3>
+              <div id="selectedPatient" class="small"></div>
+              <button id="deletePatientBtn" class="btn danger">Delete Patient</button>
+
+              <hr />
+              <h3 id="registerPatientTitle">Register Patient</h3>
+              <div class="form-grid">
+                <input id="targetServerId" type="number" placeholder="Server ID (optional)" />
+                <input id="patientFirstName" type="text" placeholder="First Name" />
+                <input id="patientLastName" type="text" placeholder="Last Name" />
+                <input id="patientDob" type="text" placeholder="DOB" />
+                <textarea id="patientNotes" placeholder="Notes"></textarea>
+              </div>
+              <button id="createPatientBtn" class="btn">Register Patient</button>
+            </section>
+          </div>
+        </div>
+
+        <div id="historyTab" class="tab-content">
+          <section class="card">
+            <h3 id="historyTitle">Treatment History</h3>
+            <div id="historyList" class="list"></div>
+            <div class="pager">
+              <button id="historyPrev" class="btn">Prev</button>
+              <span id="historyPageInfo"></span>
+              <button id="historyNext" class="btn">Next</button>
+            </div>
+          </section>
+        </div>
+
+        <div id="formsTab" class="tab-content">
+          <div class="grid-2">
+            <section class="card">
+              <h3 id="createFormTitle">Create Form</h3>
+              <div class="form-grid">
+                <select id="formTemplate"></select>
+                <input id="formTitleInput" type="text" placeholder="Title" />
+                <textarea id="formDescription" placeholder="Description"></textarea>
+              </div>
+              <button id="createFormBtn" class="btn">Create Form</button>
+            </section>
+
+            <section class="card">
+              <h3 id="formsListTitle">Created Forms</h3>
+              <div id="formsList" class="list"></div>
+              <div class="pager">
+                <button id="formsPrev" class="btn">Prev</button>
+                <span id="formsPageInfo"></span>
+                <button id="formsNext" class="btn">Next</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="docsView" class="view hidden">
+        <div class="grid-2">
+          <section class="card" id="docsLeftCard">
+            <div id="docsLeftHome">
+              <h3 id="docsTitle">Your Medical Documents</h3>
+              <div id="docsMenu">
+                <h3 id="docsAddPatient">Aggiungi Paziente</h3>
+                <h3 id="docsPatients">Pazienti</h3>
+                <h3 id="docsArchive">Fascicoli</h3>
+              </div>
+            </div>
+          </section>
+          <section class="card" id="docsRightCard">
+            <img id="docsPageImage" src="img/immag_laterale.png" alt="Archivio Medico" />
+            <section id="docsPatientForm">
+              <div class="sheetTitle">PATIENT PERSONAL INFORMATION</div>
+              <div class="sheetGrid">
+                <input id="docsRegFullName" type="text" placeholder="Nome e Cognome" />
+                <input id="docsRegDob" type="text" placeholder="Data di nascita" />
+                <input id="docsRegProfession" type="text" placeholder="Professione / Lavoro" />
+                <input id="docsRegSex" type="text" placeholder="Sesso [ Maschio / Femmina ]" />
+                <input id="docsRegServerId" type="number" placeholder="Online Player ID" />
+              </div>
+              <div class="sheetTitle">PATIENT CONFIDENTIAL (PREVIOUS HEALTH HISTORY - REPORTS?)</div>
+              <textarea id="docsRegHistory" placeholder="Dettagli medici confidenziali"></textarea>
+              <div class="sheetSign">Sign Here For Registration</div>
+              <button id="docsRegisterBtn" class="btn">REGISTER</button>
+              <div id="docsRegisterStatus" class="small"></div>
+            </section>
+            <div id="docsList" class="list"></div>
+            <div id="docDetail" class="small"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+

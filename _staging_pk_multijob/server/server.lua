@@ -16,6 +16,87 @@ local function notify(source, title, subtitle, ntype)
     TriggerClientEvent("pk_multijob:client:notify", source, title, subtitle, ntype or "tip")
 end
 
+local function normalizeJobEntry(entry, fallbackName)
+    if type(entry) == "string" and entry ~= "" then
+        return {
+            name = entry,
+            grade = 0,
+            label = entry,
+        }
+    end
+
+    if type(entry) ~= "table" then
+        if fallbackName and fallbackName ~= "" then
+            return {
+                name = tostring(fallbackName),
+                grade = 0,
+                label = tostring(fallbackName),
+            }
+        end
+        return nil
+    end
+
+    local name = entry.name or entry.job or entry.jobName or fallbackName
+    if not name or name == "" then return nil end
+
+    local grade = tonumber(entry.grade or entry.jobGrade or entry.rank or 0) or 0
+    local label = entry.label or entry.jobLabel or entry.title or name
+
+    return {
+        name = tostring(name),
+        grade = grade,
+        label = tostring(label),
+    }
+end
+
+local function normalizeMultiJobs(raw)
+    if type(raw) ~= "table" then return {} end
+
+    if raw.name or raw.job or raw.jobName then
+        local single = normalizeJobEntry(raw)
+        return single and { single } or {}
+    end
+
+    local jobs = {}
+    local seen = {}
+    local indexed = {}
+    local mapped = {}
+
+    local function push(entry, fallbackName)
+        local job = normalizeJobEntry(entry, fallbackName)
+        if not job or seen[job.name] then return end
+        seen[job.name] = true
+        jobs[#jobs + 1] = job
+    end
+
+    for key, value in pairs(raw) do
+        local numericKey = tonumber(key)
+        if numericKey then
+            indexed[#indexed + 1] = { key = numericKey, value = value }
+        else
+            mapped[#mapped + 1] = { key = tostring(key), value = value }
+        end
+    end
+
+    table.sort(indexed, function(a, b)
+        return a.key < b.key
+    end)
+
+    table.sort(mapped, function(a, b)
+        return a.key < b.key
+    end)
+
+    for _, item in ipairs(indexed) do
+        push(item.value)
+    end
+
+    for _, item in ipairs(mapped) do
+        push(item.value, item.key)
+    end
+
+    return jobs
+end
+
 -- Legge i multijobs dal DB tramite charIdentifier
 local function getMultiJobsFromDB(charIdentifier, cb)
     exports.oxmysql:single(
@@ -26,22 +107,26 @@ local function getMultiJobsFromDB(charIdentifier, cb)
             local raw = row.multijobs
             -- oxmysql può restituire JSON già decodificato come tabella Lua
             if type(raw) == "table" then
-                cb(#raw > 0 and raw or {})
+                cb(normalizeMultiJobs(raw))
                 return
             end
             if not raw or raw == "" or raw == "[]" or raw == "{}" then
                 cb({})
                 return
             end
-            local decoded = json.decode(raw)
-            cb(decoded or {})
+            local ok, decoded = pcall(json.decode, raw)
+            if not ok then
+                cb({})
+                return
+            end
+            cb(normalizeMultiJobs(decoded))
         end
     )
 end
 
 -- Salva i multijobs nel DB
 local function saveMultiJobsToDB(charIdentifier, multiJobs, cb)
-    local encoded = json.encode(multiJobs)
+    local encoded = json.encode(normalizeMultiJobs(multiJobs))
     exports.oxmysql:execute(
         "UPDATE characters SET multijobs = ? WHERE charidentifier = ?",
         { encoded, charIdentifier },
@@ -65,6 +150,47 @@ Core.Callback.Register("pk_multijob:getMyJobs", function(source, callback)
     local maxJobs = getMaxJobsForSource(source)
 
     getMultiJobsFromDB(character.charIdentifier, function(multiJobs)
+        local shouldSave = false
+        local activeJob = normalizeJobEntry({
+            name = character.job,
+            grade = character.jobGrade,
+            label = character.jobLabel or character.job,
+        })
+
+        if #multiJobs == 0 then
+            multiJobs = activeJob and { activeJob } or {}
+            shouldSave = true
+        elseif activeJob then
+            local foundActive = false
+
+            for _, job in ipairs(multiJobs) do
+                if job.name == activeJob.name then
+                    foundActive = true
+
+                    if (tonumber(job.grade or 0) or 0) ~= activeJob.grade then
+                        job.grade = activeJob.grade
+                        shouldSave = true
+                    end
+
+                    if not job.label or job.label == "" then
+                        job.label = activeJob.label
+                        shouldSave = true
+                    end
+
+                    break
+                end
+            end
+
+            if not foundActive then
+                multiJobs[#multiJobs + 1] = activeJob
+                shouldSave = true
+            end
+        end
+
+        if shouldSave then
+            saveMultiJobsToDB(character.charIdentifier, multiJobs, nil)
+        end
+
         callback({
             jobs    = multiJobs,
             active  = character.job,
@@ -100,7 +226,9 @@ Core.Callback.Register("pk_multijob:setActiveJob", function(source, callback, jo
             return
         end
 
-        TriggerEvent("vorp:setJob", source, targetJob.name, targetJob.grade)
+        character.setJob(targetJob.name)
+        character.setJobGrade(targetJob.grade)
+        character.setJobLabel(targetJob.label)
         notify(source, "Multi Job", "Lavoro attivo: " .. targetJob.label, "update")
         callback(true)
     end)
@@ -142,7 +270,6 @@ Core.Callback.Register("pk_multijob:addJob", function(source, callback, jobName,
 
         saveMultiJobsToDB(character.charIdentifier, multiJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", source, multiJobs)
                 notify(source, "Multi Job", "Lavoro aggiunto: " .. (jobLabel or jobName), "update")
                 callback(true)
             else
@@ -195,11 +322,11 @@ Core.Callback.Register("pk_multijob:removeJob", function(source, callback, jobNa
                 return
             end
 
-            TriggerEvent("vorp:setMultiJob", source, newJobs)
-
             if character.job == jobName then
                 local fallback = newJobs[1]
-                TriggerEvent("vorp:setJob", source, fallback.name, fallback.grade)
+                character.setJob(fallback.name)
+                character.setJobGrade(fallback.grade)
+                character.setJobLabel(fallback.label)
                 notify(source, "Multi Job", "Nuovo lavoro attivo: " .. fallback.label, "update")
             end
 
@@ -274,7 +401,6 @@ RegisterCommand("addJob", function(source, args)
 
         saveMultiJobsToDB(targetChar.charIdentifier, multiJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", targetId, multiJobs)
                 notify(targetId, "Multi Job", "Ti è stato assegnato il lavoro: " .. label, "update")
                 if source ~= 0 then
                     notify(source, "Multi Job", "Job assegnato con successo.", "update")
@@ -341,11 +467,11 @@ RegisterCommand("removeJob", function(source, args)
 
         saveMultiJobsToDB(targetChar.charIdentifier, newJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", targetId, newJobs)
-
                 if targetChar.job == jobName then
                     local fallback = newJobs[1]
-                    TriggerEvent("vorp:setJob", targetId, fallback.name, fallback.grade)
+                    targetChar.setJob(fallback.name)
+                    targetChar.setJobGrade(fallback.grade)
+                    targetChar.setJobLabel(fallback.label)
                     notify(targetId, "Multi Job", "Nuovo lavoro attivo: " .. fallback.label, "update")
                 end
 

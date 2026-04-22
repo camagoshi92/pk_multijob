@@ -1,0 +1,198 @@
+﻿<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pk_medicarch</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="overlay" class="hidden">
+    <div class="bg-noise"></div>
+    <main class="panel">
+      <header class="topbar">
+        <div>
+          <h1 id="appTitle">Archivio Medico</h1>
+          <p id="subTitle">Dipartimento</p>
+        </div>
+      </header>
+
+      <section id="archiveView" class="view hidden">
+        <button id="archiveBackBtn" class="bookmark-btn">Indietro</button>
+        <nav class="tabs">
+          <button class="tab active" data-tab="patientsTab" id="tabPatients">Pazienti</button>
+          <button class="tab" data-tab="historyTab" id="tabHistory">Storico</button>
+          <button class="tab" data-tab="formsTab" id="tabForms">Documenti</button>
+        </nav>
+
+        <div id="patientsTab" class="tab-content active">
+          <div class="grid-2">
+            <section class="card">
+              <h3 id="patientsListTitle">Lista Pazienti</h3>
+              <div class="row">
+                <input id="patientSearch" type="text" placeholder="Cerca" />
+                <button id="searchPatientBtn" class="btn">Cerca</button>
+              </div>
+              <div id="patientsList" class="list"></div>
+              <div class="pager">
+                <button id="patientsPrev" class="btn">Precedente</button>
+                <span id="patientsPageInfo"></span>
+                <button id="patientsNext" class="btn">Successiva</button>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3 id="patientInfoTitle">Informazioni Paziente</h3>
+              <div id="selectedPatient" class="small"></div>
+              <button id="deletePatientBtn" class="btn danger">Elimina Paziente</button>
+
+              <hr />
+              <h3 id="registerPatientTitle">Registra Paziente</h3>
+              <div class="form-grid">
+                <input id="targetServerId" type="number" placeholder="ID Server (opzionale)" />
+                <input id="patientFirstName" type="text" placeholder="Nome" />
+                <input id="patientLastName" type="text" placeholder="Cognome" />
+                <input id="patientDob" type="text" placeholder="Data di nascita" />
+                <textarea id="patientNotes" placeholder="Note"></textarea>
+              </div>
+              <button id="createPatientBtn" class="btn">Registra Paziente</button>
+            </section>
+          </div>
+        </div>
+
+        <div id="historyTab" class="tab-content">
+          <section class="card">
+            <h3 id="historyTitle">Storico Trattamenti</h3>
+            <div id="historyList" class="list"></div>
+            <div class="pager">
+              <button id="historyPrev" class="btn">Precedente</button>
+              <span id="historyPageInfo"></span>
+              <button id="historyNext" class="btn">Successiva</button>
+            </div>
+          </section>
+        </div>
+
+        <div id="formsTab" class="tab-content">
+          <div class="grid-2">
+            <section class="card">
+              <h3 id="createFormTitle">Crea Documento</h3>
+              <div class="form-grid">
+                <select id="formTemplate"></select>
+                <input id="formTitleInput" type="text" placeholder="Titolo" />
+                <textarea id="formDescription" placeholder="Descrizione"></textarea>
+              </div>
+              <button id="createFormBtn" class="btn">Crea Documento</button>
+              <button id="cancelFormEditBtn" class="btn hidden">Annulla Modifica</button>
+            </section>
+
+            <section class="card">
+              <h3 id="formsListTitle">Documenti Creati</h3>
+              <div id="formsList" class="list"></div>
+              <div class="pager">
+                <button id="formsPrev" class="btn">Precedente</button>
+                <span id="formsPageInfo"></span>
+                <button id="formsNext" class="btn">Successiva</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="docsView" class="view hidden">
+        <button id="docsBackBtn" class="bookmark-btn">Indietro</button>
+        <div class="grid-2">
+          <section class="card" id="docsLeftCard">
+            <div id="docsLeftHome">
+              <h3 id="docsTitle">I Tuoi Documenti Medici</h3>
+              <div id="docsMenu">
+                <h3 id="docsAddPatient">Aggiungi Paziente</h3>
+                <h3 id="docsPatients">Pazienti</h3>
+                <h3 id="docsArchive">Fascicoli</h3>
+              </div>
+              <section id="docsPatientsPanel">
+                <div id="docsPatientsSearchRow">
+                  <input id="docsPatientsSearch" type="text" placeholder="Cerca paziente" />
+                  <button id="docsPatientsSearchBtn" class="btn">Cerca</button>
+                </div>
+                <div id="docsPatientsList" class="list"></div>
+              </section>
+            </div>
+            <section id="docsArchiveEditor">
+              <h3 id="docsArchiveEditorTitle">Modulo Fascicolo</h3>
+              <div id="docsArchiveEditorIntro" class="small">Premi Crea Fascicolo per crearne uno nuovo oppure clicca un fascicolo a destra per leggerlo.</div>
+              <section id="docsArchiveReader" class="hidden">
+                <h3 id="docsArchiveReaderTitle">Lettura Fascicolo</h3>
+                <div id="docsArchiveReaderCaseTitle" class="docs-case-reader-case-title"></div>
+                <div id="docsArchiveReaderMeta" class="small"></div>
+                <div id="docsArchiveReaderBody" class="docs-case-reader-body small"></div>
+                <div class="docs-case-reader-actions">
+                  <button id="docsTranscribeCaseBtn" class="btn">Trascrivi Fascicolo</button>
+                  <button id="docsReadCaseEditBtn" class="btn">Modifica</button>
+                  <button id="docsCloseCaseViewBtn" class="btn">Chiudi Lettura</button>
+                </div>
+              </section>
+              <div id="docsArchiveForm" class="form-grid">
+                <input id="docsCaseTitleInput" type="text" placeholder="Titolo Fascicolo" />
+                <textarea id="docsCaseDescription" placeholder="Dettagli indagine o ricerca"></textarea>
+              </div>
+              <button id="docsSaveCaseBtn" class="btn">Crea Fascicolo</button>
+              <button id="docsCancelCaseBtn" class="btn hidden">Annulla</button>
+            </section>
+          </section>
+          <section class="card" id="docsRightCard">
+            <img id="docsPageImage" src="img/immag_laterale.png" alt="Archivio Medico" />
+            <section id="docsPatientForm">
+              <div class="sheetTitle">INFORMAZIONI PERSONALI DEL PAZIENTE</div>
+              <div class="sheetGrid">
+                <input id="docsRegFullName" type="text" placeholder="Nome e Cognome" />
+                <input id="docsRegDob" type="text" placeholder="Data di nascita" />
+                <input id="docsRegProfession" type="text" placeholder="Professione / Lavoro" />
+                <input id="docsRegSex" type="text" placeholder="Sesso [Maschio / Femmina]" />
+                <input id="docsRegServerId" type="number" placeholder="ID giocatore online" />
+              </div>
+              <div class="sheetTitle">DATI RISERVATI DEL PAZIENTE (STORIA CLINICA - REFERTI)</div>
+              <textarea id="docsRegHistory" placeholder="Dettagli medici confidenziali"></textarea>
+              <div class="sheetSign">Firma qui per la registrazione</div>
+              <button id="docsRegisterBtn" class="btn">REGISTRA</button>
+              <div id="docsRegisterStatus" class="small"></div>
+            </section>
+            <section id="docsCasesPanel">
+              <h3 id="docsCasesTitle">Fascicoli Aperti</h3>
+              <div id="docsCasesList" class="list"></div>
+              <button id="docsCreateCaseBtn" class="btn">Crea Fascicolo</button>
+              <div id="docsCasesPager" class="pager">
+                <button id="docsCasesPrev" class="btn">Precedente</button>
+                <span id="docsCasesPageInfo"></span>
+                <button id="docsCasesNext" class="btn">Successiva</button>
+              </div>
+            </section>
+            <div id="docsList" class="list"></div>
+            <div id="docDetail" class="small"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="transcriptView" class="view hidden">
+        <button id="transcriptCloseBtn" class="bookmark-btn visible">Chiudi</button>
+        <section id="transcriptSheet">
+          <h3 id="transcriptSheetTitle">Trascrizione Fascicolo</h3>
+          <div id="transcriptSheetCaseTitle" class="transcript-case-title"></div>
+          <div id="transcriptSheetMeta" class="small"></div>
+          <div id="transcriptSheetBody" class="transcript-sheet-body small"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+

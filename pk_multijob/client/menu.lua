@@ -100,10 +100,16 @@ end
 --  Menu principale: lista job
 -- ============================================================
 
+local menuBusy = false
+
 function openJobMenu()
+    if menuBusy then return end
+    menuBusy = true
+
     Core.Callback.TriggerAsync("pk_multijob:getMyJobs", function(data)
         if not data or type(data.jobs) ~= "table" or #data.jobs == 0 then
             notify("Nessun lavoro assegnato.", "error", "Multi Job")
+            menuBusy = false
             return
         end
 
@@ -117,31 +123,36 @@ function openJobMenu()
             })
         end
 
-        openVlibMenu(
-            {
-                title    = "I Tuoi Lavori",
-                align    = "top-left",
-                elements = elements,
-            },
-            function(selectData, m)
-                local selectedJob = nil
-                for _, job in ipairs(data.jobs) do
-                    if job.name == selectData.name then
-                        selectedJob = job
-                        break
+        CreateThread(function()
+            Wait(600)
+            openVlibMenu(
+                {
+                    title    = "I Tuoi Lavori",
+                    align    = "top-left",
+                    elements = elements,
+                },
+                function(selectData, m)
+                    menuBusy = false
+                    local selectedJob = nil
+                    for _, job in ipairs(data.jobs) do
+                        if job.name == selectData.name then
+                            selectedJob = job
+                            break
+                        end
                     end
-                end
 
-                m.close()
-                if selectedJob then
-                    CreateThread(function()
-                        openJobDetail(selectedJob, data)
-                    end)
+                    m.close()
+                    if selectedJob then
+                        CreateThread(function()
+                            openJobDetail(selectedJob, data)
+                        end)
+                    end
+                end,
+                function(_, m)
+                    menuBusy = false
+                    m.close()
                 end
-            end,
-            function(_, m)
-                m.close()
-            end
-        )
+            )
+        end)
     end)
 end
