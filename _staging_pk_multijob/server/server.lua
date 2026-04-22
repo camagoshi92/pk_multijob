@@ -4,10 +4,27 @@ local Core = exports.vorp_core:GetCore()
 --  Utility
 -- ============================================================
 
+local function getUserGroup(user)
+    if not user then return nil end
+
+    local group = user.getGroup
+    if type(group) == "function" then
+        local ok, value = pcall(group, user)
+        if ok then group = value else group = nil end
+    end
+
+    if group == nil or group == "" then
+        group = user.group or user.Group
+    end
+
+    if group == nil or group == "" then return nil end
+    return tostring(group)
+end
+
 local function getMaxJobsForSource(source)
     local user = Core.getUser(source)
     if not user then return Config.DefaultMaxJobs end
-    local group = user.getGroup
+    local group = getUserGroup(user)
     return Config.MaxJobsByGroup[group] or Config.DefaultMaxJobs
 end
 
@@ -344,7 +361,7 @@ RegisterCommand("addJob", function(source, args)
     local user = Core.getUser(source)
     if source ~= 0 then
         if not user then return end
-        if user.getGroup ~= "admin" then
+        if getUserGroup(user) ~= "admin" then
             notify(source, "Multi Job", "Permessi insufficienti.", "fail")
             return
         end
@@ -421,7 +438,7 @@ RegisterCommand("removeJob", function(source, args)
     local user = Core.getUser(source)
     if source ~= 0 then
         if not user then return end
-        if user.getGroup ~= "admin" then
+        if getUserGroup(user) ~= "admin" then
             notify(source, "Multi Job", "Permessi insufficienti.", "fail")
             return
         end
