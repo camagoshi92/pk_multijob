@@ -29,7 +29,7 @@ Il resource usa direttamente:
 
 - `vorp_core`
 - `oxmysql`
-- `tpz_menu_base`
+- `v-libs`
 
 ## Requisiti database
 
@@ -56,7 +56,7 @@ Esempio `server.cfg`:
 ```cfg
 ensure oxmysql
 ensure vorp_core
-ensure tpz_menu_base
+ensure v-libs
 ensure pk_multijob
 ```
 
