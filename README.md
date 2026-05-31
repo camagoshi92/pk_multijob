@@ -29,11 +29,11 @@ Il resource usa direttamente:
 
 - `vorp_core`
 - `oxmysql`
-- `v-libs`
+- `tpz_menu_base`
 
 ## Requisiti database
 
-Il codice legge e salva i multi-job nella tabella `characters`, colonna `multijobs`.
+Il codice salva i multi-job nella tabella dedicata `pk_multijob_jobs`, creata automaticamente all'avvio, e mantiene aggiornata anche la colonna `characters.multijobs` per compatibilita con VORP.
 
 Se la colonna non esiste, aggiungila prima di avviare il resource. Esempio:
 
@@ -56,7 +56,7 @@ Esempio `server.cfg`:
 ```cfg
 ensure oxmysql
 ensure vorp_core
-ensure v-libs
+ensure tpz_menu_base
 ensure pk_multijob
 ```
 
@@ -141,7 +141,7 @@ Eventi rilevanti:
 
 ## Note operative
 
-- I job multipli vengono salvati come array JSON con campi `name`, `grade` e `label`.
+- I job multipli vengono salvati nel formato VORP `{"job": {"grade": 0, "label": "Label"}}`; il resource legge anche il vecchio formato array.
 - Al login/spawn il client mostra una notifica con job attivo e grade corrente.
 - Se rimuovi il job attivo e ne rimane almeno uno, il resource imposta automaticamente il primo job disponibile come attivo.
 - `Config.DefaultJob` e `Config.DefaultJobGrade` sono definiti, ma nel codice attuale non vengono richiamati come fallback automatico.
