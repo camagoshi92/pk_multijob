@@ -4,10 +4,27 @@ local Core = exports.vorp_core:GetCore()
 --  Utility
 -- ============================================================
 
+local function getUserGroup(user)
+    if not user then return nil end
+
+    local group = user.getGroup
+    if type(group) == "function" then
+        local ok, value = pcall(group, user)
+        if ok then group = value else group = nil end
+    end
+
+    if group == nil or group == "" then
+        group = user.group or user.Group
+    end
+
+    if group == nil or group == "" then return nil end
+    return tostring(group)
+end
+
 local function getMaxJobsForSource(source)
     local user = Core.getUser(source)
     if not user then return Config.DefaultMaxJobs end
-    local group = user.getGroup
+    local group = getUserGroup(user)
     return Config.MaxJobsByGroup[group] or Config.DefaultMaxJobs
 end
 
@@ -16,39 +33,290 @@ local function notify(source, title, subtitle, ntype)
     TriggerClientEvent("pk_multijob:client:notify", source, title, subtitle, ntype or "tip")
 end
 
--- Legge i multijobs dal DB tramite charIdentifier
-local function getMultiJobsFromDB(charIdentifier, cb)
-    exports.oxmysql:single(
-        "SELECT multijobs FROM characters WHERE charidentifier = ?",
-        { charIdentifier },
-        function(row)
-            if not row then cb({}) return end
-            local raw = row.multijobs
-            -- oxmysql può restituire JSON già decodificato come tabella Lua
-            if type(raw) == "table" then
-                cb(#raw > 0 and raw or {})
-                return
-            end
-            if not raw or raw == "" or raw == "[]" or raw == "{}" then
-                cb({})
-                return
-            end
-            local decoded = json.decode(raw)
-            cb(decoded or {})
+local function ensureDatabase()
+    exports.oxmysql:execute([[
+        CREATE TABLE IF NOT EXISTS pk_multijob_jobs (
+            id INT NOT NULL AUTO_INCREMENT,
+            identifier VARCHAR(120) NOT NULL,
+            charidentifier VARCHAR(80) NOT NULL,
+            job VARCHAR(80) NOT NULL,
+            grade INT NOT NULL DEFAULT 0,
+            label VARCHAR(120) NOT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_pk_multijob_character_job (identifier, charidentifier, job),
+            KEY idx_pk_multijob_character (identifier, charidentifier)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ]])
+end
+
+CreateThread(function()
+    ensureDatabase()
+end)
+
+local function normalizeJobEntry(entry, fallbackName)
+    if type(entry) == "string" and entry ~= "" then
+        return {
+            name = entry,
+            grade = 0,
+            label = entry,
+        }
+    end
+
+    if type(entry) ~= "table" then
+        if fallbackName and fallbackName ~= "" then
+            return {
+                name = tostring(fallbackName),
+                grade = 0,
+                label = tostring(fallbackName),
+            }
+        end
+        return nil
+    end
+
+    local name = entry.name or entry.job or entry.jobName or fallbackName
+    if not name or name == "" then return nil end
+
+    local grade = tonumber(entry.grade or entry.jobGrade or entry.rank or 0) or 0
+    local label = entry.label or entry.jobLabel or entry.title or name
+
+    return {
+        name = tostring(name),
+        grade = grade,
+        label = tostring(label),
+    }
+end
+
+local function normalizeMultiJobs(raw)
+    if type(raw) ~= "table" then return {} end
+
+    if raw.name or raw.job or raw.jobName then
+        local single = normalizeJobEntry(raw)
+        return single and { single } or {}
+    end
+
+    local jobs = {}
+    local seen = {}
+    local indexed = {}
+    local mapped = {}
+
+    local function push(entry, fallbackName)
+        local job = normalizeJobEntry(entry, fallbackName)
+        if not job or seen[job.name] then return end
+        seen[job.name] = true
+        jobs[#jobs + 1] = job
+    end
+
+    for key, value in pairs(raw) do
+        local numericKey = tonumber(key)
+        if numericKey then
+            indexed[#indexed + 1] = { key = numericKey, value = value }
+        else
+            mapped[#mapped + 1] = { key = tostring(key), value = value }
+        end
+    end
+
+    table.sort(indexed, function(a, b)
+        return a.key < b.key
+    end)
+
+    table.sort(mapped, function(a, b)
+        return a.key < b.key
+    end)
+
+    for _, item in ipairs(indexed) do
+        push(item.value)
+    end
+
+    for _, item in ipairs(mapped) do
+        push(item.value, item.key)
+    end
+
+    return jobs
+end
+
+local function getCharacterIdentity(character)
+    if not character then return nil, nil end
+
+    local identifier = character.identifier
+    if type(identifier) == "function" then
+        local ok, value = pcall(identifier, character)
+        identifier = ok and value or nil
+    end
+
+    local charIdentifier = character.charIdentifier or character.charidentifier or character.charId
+    if type(charIdentifier) == "function" then
+        local ok, value = pcall(charIdentifier, character)
+        charIdentifier = ok and value or nil
+    end
+
+    return identifier, charIdentifier
+end
+
+local function syncMultiJobsToCharacter(character, multiJobs)
+    local normalized = normalizeMultiJobs(multiJobs)
+    if not character then return normalized end
+
+    if type(character.multiJobs) == "table" then
+        for key in pairs(character.multiJobs) do
+            character.multiJobs[key] = nil
+        end
+    end
+
+    for _, job in ipairs(normalized) do
+        if type(character.setMultiJob) == "function" then
+            character.setMultiJob(job.name, job.grade, job.label)
+        elseif type(character.multiJobs) == "table" then
+            character.multiJobs[job.name] = {
+                grade = job.grade,
+                label = job.label,
+            }
+        end
+    end
+
+    return normalized
+end
+
+local function getCachedMultiJobs(character)
+    return normalizeMultiJobs(character and character.multiJobs or {})
+end
+
+local function encodeMultiJobsForVorp(multiJobs)
+    local encoded = {}
+
+    for _, job in ipairs(normalizeMultiJobs(multiJobs)) do
+        encoded[job.name] = {
+            grade = job.grade,
+            label = job.label,
+        }
+    end
+
+    return json.encode(encoded)
+end
+
+local function getMultiJobsFromOwnTable(identifier, charIdentifier, cb)
+    exports.oxmysql:execute(
+        "SELECT job AS name, grade, label FROM pk_multijob_jobs WHERE identifier = ? AND charidentifier = ? ORDER BY sort_order ASC, id ASC",
+        { identifier, charIdentifier },
+        function(rows)
+            cb(normalizeMultiJobs(rows or {}))
         end
     )
 end
 
+-- Legge i multijobs dal DB tramite charIdentifier
+local function getMultiJobsFromDB(character, cb)
+    local identifier, charIdentifier = getCharacterIdentity(character)
+    local function finish(jobs, loadedFromOwnTable)
+        cb(syncMultiJobsToCharacter(character, jobs), loadedFromOwnTable == true)
+    end
+
+    if not identifier or not charIdentifier then
+        finish(getCachedMultiJobs(character))
+        return
+    end
+
+    getMultiJobsFromOwnTable(identifier, charIdentifier, function(savedJobs)
+        if #savedJobs > 0 then
+            finish(savedJobs, true)
+            return
+        end
+
+        exports.oxmysql:single(
+        "SELECT multijobs FROM characters WHERE identifier = ? AND charidentifier = ? LIMIT 1",
+        { identifier, charIdentifier },
+        function(row)
+            if not row then finish(getCachedMultiJobs(character), false) return end
+            local raw = row.multijobs
+            -- oxmysql può restituire JSON già decodificato come tabella Lua
+            if type(raw) == "table" then
+                finish(raw, false)
+                return
+            end
+            if not raw or raw == "" or raw == "[]" or raw == "{}" then
+                finish(getCachedMultiJobs(character), false)
+                return
+            end
+            local ok, decoded = pcall(json.decode, raw)
+            if not ok then
+                finish(getCachedMultiJobs(character), false)
+                return
+            end
+            finish(decoded, false)
+        end
+        )
+    end)
+end
+
 -- Salva i multijobs nel DB
-local function saveMultiJobsToDB(charIdentifier, multiJobs, cb)
-    local encoded = json.encode(multiJobs)
+local function saveMultiJobsInOwnTable(identifier, charIdentifier, multiJobs, cb)
+    local normalized = normalizeMultiJobs(multiJobs)
+
     exports.oxmysql:execute(
-        "UPDATE characters SET multijobs = ? WHERE charidentifier = ?",
-        { encoded, charIdentifier },
+        "DELETE FROM pk_multijob_jobs WHERE identifier = ? AND charidentifier = ?",
+        { identifier, charIdentifier },
         function()
-            if cb then cb(true) end
+            if #normalized == 0 then
+                cb(true)
+                return
+            end
+
+            local pending = #normalized
+            local failed = false
+
+            for index, job in ipairs(normalized) do
+                exports.oxmysql:execute(
+                    "INSERT INTO pk_multijob_jobs (identifier, charidentifier, job, grade, label, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                    { identifier, charIdentifier, job.name, job.grade, job.label, index },
+                    function(result)
+                        if result == nil or result == false then
+                            failed = true
+                        end
+
+                        pending = pending - 1
+                        if pending == 0 then
+                            cb(not failed)
+                        end
+                    end
+                )
+            end
         end
     )
+end
+
+local function saveMultiJobsInCharacters(character, identifier, charIdentifier, multiJobs)
+    exports.oxmysql:execute(
+        "UPDATE characters SET multijobs = ? WHERE identifier = ? AND charidentifier = ? LIMIT 1",
+        { encodeMultiJobsForVorp(multiJobs), identifier, charIdentifier },
+        function()
+            syncMultiJobsToCharacter(character, multiJobs)
+        end
+    )
+end
+
+local function saveMultiJobs(character, multiJobs, cb)
+    local identifier, charIdentifier = getCharacterIdentity(character)
+    if not identifier or not charIdentifier then
+        if cb then cb(false) end
+        return
+    end
+
+    local normalized = normalizeMultiJobs(multiJobs)
+
+    saveMultiJobsInOwnTable(identifier, charIdentifier, normalized, function(success)
+        if success then
+            syncMultiJobsToCharacter(character, normalized)
+            saveMultiJobsInCharacters(character, identifier, charIdentifier, normalized)
+        else
+            print(("[pk_multijob] Errore salvataggio pk_multijob_jobs per identifier=%s charidentifier=%s"):format(
+                tostring(identifier),
+                tostring(charIdentifier)
+            ))
+        end
+
+        if cb then cb(success) end
+    end)
 end
 
 -- ============================================================
@@ -64,7 +332,48 @@ Core.Callback.Register("pk_multijob:getMyJobs", function(source, callback)
 
     local maxJobs = getMaxJobsForSource(source)
 
-    getMultiJobsFromDB(character.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(character, function(multiJobs, loadedFromOwnTable)
+        local shouldSave = false
+        local activeJob = normalizeJobEntry({
+            name = character.job,
+            grade = character.jobGrade,
+            label = character.jobLabel or character.job,
+        })
+
+        if #multiJobs == 0 then
+            multiJobs = activeJob and { activeJob } or {}
+            shouldSave = true
+        elseif activeJob then
+            local foundActive = false
+
+            for _, job in ipairs(multiJobs) do
+                if job.name == activeJob.name then
+                    foundActive = true
+
+                    if (tonumber(job.grade or 0) or 0) ~= activeJob.grade then
+                        job.grade = activeJob.grade
+                        shouldSave = true
+                    end
+
+                    if not job.label or job.label == "" then
+                        job.label = activeJob.label
+                        shouldSave = true
+                    end
+
+                    break
+                end
+            end
+
+            if not foundActive then
+                multiJobs[#multiJobs + 1] = activeJob
+                shouldSave = true
+            end
+        end
+
+        if shouldSave or (#multiJobs > 0 and not loadedFromOwnTable) then
+            saveMultiJobs(character, multiJobs, nil)
+        end
+
         callback({
             jobs    = multiJobs,
             active  = character.job,
@@ -85,7 +394,7 @@ Core.Callback.Register("pk_multijob:setActiveJob", function(source, callback, jo
     local character = user.getUsedCharacter
     if not character then callback(false) return end
 
-    getMultiJobsFromDB(character.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(character, function(multiJobs)
         local targetJob = nil
         for _, j in ipairs(multiJobs) do
             if j.name == jobName then
@@ -100,7 +409,9 @@ Core.Callback.Register("pk_multijob:setActiveJob", function(source, callback, jo
             return
         end
 
-        TriggerEvent("vorp:setJob", source, targetJob.name, targetJob.grade)
+        character.setJob(targetJob.name)
+        character.setJobGrade(targetJob.grade)
+        character.setJobLabel(targetJob.label)
         notify(source, "Multi Job", "Lavoro attivo: " .. targetJob.label, "update")
         callback(true)
     end)
@@ -119,7 +430,7 @@ Core.Callback.Register("pk_multijob:addJob", function(source, callback, jobName,
 
     local maxJobs = getMaxJobsForSource(source)
 
-    getMultiJobsFromDB(character.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(character, function(multiJobs)
         for _, j in ipairs(multiJobs) do
             if j.name == jobName then
                 notify(source, "Multi Job", "Hai già questo lavoro.", "fail")
@@ -140,9 +451,8 @@ Core.Callback.Register("pk_multijob:addJob", function(source, callback, jobName,
             label = jobLabel or jobName,
         })
 
-        saveMultiJobsToDB(character.charIdentifier, multiJobs, function(success)
+        saveMultiJobs(character, multiJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", source, multiJobs)
                 notify(source, "Multi Job", "Lavoro aggiunto: " .. (jobLabel or jobName), "update")
                 callback(true)
             else
@@ -164,7 +474,7 @@ Core.Callback.Register("pk_multijob:removeJob", function(source, callback, jobNa
     local character = user.getUsedCharacter
     if not character then callback(false) return end
 
-    getMultiJobsFromDB(character.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(character, function(multiJobs)
         if #multiJobs <= 1 then
             notify(source, "Multi Job", "Non puoi rimuovere l'unico lavoro.", "fail")
             callback(false)
@@ -188,18 +498,18 @@ Core.Callback.Register("pk_multijob:removeJob", function(source, callback, jobNa
             return
         end
 
-        saveMultiJobsToDB(character.charIdentifier, newJobs, function(success)
+        saveMultiJobs(character, newJobs, function(success)
             if not success then
                 notify(source, "Multi Job", "Errore nel salvataggio.", "fail")
                 callback(false)
                 return
             end
 
-            TriggerEvent("vorp:setMultiJob", source, newJobs)
-
             if character.job == jobName then
                 local fallback = newJobs[1]
-                TriggerEvent("vorp:setJob", source, fallback.name, fallback.grade)
+                character.setJob(fallback.name)
+                character.setJobGrade(fallback.grade)
+                character.setJobLabel(fallback.label)
                 notify(source, "Multi Job", "Nuovo lavoro attivo: " .. fallback.label, "update")
             end
 
@@ -217,7 +527,7 @@ RegisterCommand("addJob", function(source, args)
     local user = Core.getUser(source)
     if source ~= 0 then
         if not user then return end
-        if user.getGroup ~= "admin" then
+        if getUserGroup(user) ~= "admin" then
             notify(source, "Multi Job", "Permessi insufficienti.", "fail")
             return
         end
@@ -247,7 +557,7 @@ RegisterCommand("addJob", function(source, args)
 
     local maxJobs = getMaxJobsForSource(targetId)
 
-    getMultiJobsFromDB(targetChar.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(targetChar, function(multiJobs)
         for _, j in ipairs(multiJobs) do
             if j.name == jobName then
                 print("[pk_multijob] Il player " .. targetId .. " ha già il job '" .. jobName .. "'.")
@@ -272,14 +582,14 @@ RegisterCommand("addJob", function(source, args)
             label = label,
         })
 
-        saveMultiJobsToDB(targetChar.charIdentifier, multiJobs, function(success)
+        saveMultiJobs(targetChar, multiJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", targetId, multiJobs)
                 notify(targetId, "Multi Job", "Ti è stato assegnato il lavoro: " .. label, "update")
                 if source ~= 0 then
                     notify(source, "Multi Job", "Job assegnato con successo.", "update")
                 end
-                print(("[pk_multijob] Job '%s' assegnato al player %s (char: %s)"):format(jobName, targetId, targetChar.charIdentifier))
+                local _, targetCharIdentifier = getCharacterIdentity(targetChar)
+                print(("[pk_multijob] Job '%s' assegnato al player %s (char: %s)"):format(jobName, targetId, tostring(targetCharIdentifier)))
             else
                 print("[pk_multijob] Errore nel salvataggio DB.")
             end
@@ -295,7 +605,7 @@ RegisterCommand("removeJob", function(source, args)
     local user = Core.getUser(source)
     if source ~= 0 then
         if not user then return end
-        if user.getGroup ~= "admin" then
+        if getUserGroup(user) ~= "admin" then
             notify(source, "Multi Job", "Permessi insufficienti.", "fail")
             return
         end
@@ -318,7 +628,7 @@ RegisterCommand("removeJob", function(source, args)
     local targetChar = targetUser.getUsedCharacter
     if not targetChar then return end
 
-    getMultiJobsFromDB(targetChar.charIdentifier, function(multiJobs)
+    getMultiJobsFromDB(targetChar, function(multiJobs)
         if #multiJobs <= 1 then
             print("[pk_multijob] Impossibile rimuovere l'unico job.")
             return
@@ -339,13 +649,13 @@ RegisterCommand("removeJob", function(source, args)
             return
         end
 
-        saveMultiJobsToDB(targetChar.charIdentifier, newJobs, function(success)
+        saveMultiJobs(targetChar, newJobs, function(success)
             if success then
-                TriggerEvent("vorp:setMultiJob", targetId, newJobs)
-
                 if targetChar.job == jobName then
                     local fallback = newJobs[1]
-                    TriggerEvent("vorp:setJob", targetId, fallback.name, fallback.grade)
+                    targetChar.setJob(fallback.name)
+                    targetChar.setJobGrade(fallback.grade)
+                    targetChar.setJobLabel(fallback.label)
                     notify(targetId, "Multi Job", "Nuovo lavoro attivo: " .. fallback.label, "update")
                 end
 
